@@ -2,7 +2,8 @@
 """Inject XP3Compat into the supplied XP3Player 1.3.11 IPA (still needs signing).
 
 Standard library only. Does not extract archives or modify the input files.
-The exact original executable hash is deliberately required for this release.
+The original executable hash is recorded in the report for traceability; it is not
+used to reject a valid same-version input with different bytes.
 """
 import argparse
 import copy
@@ -16,7 +17,6 @@ import struct
 import tempfile
 import zipfile
 
-EXPECTED_SHA256 = "7db2db73aec2357f7314db31759dbcff49c8e12280638c2065da4a9fe95da7d5"
 INSTALL_NAME = "@executable_path/Frameworks/XP3Compat.dylib"
 APP_ROOT = "Payload/XP3Player.app/"
 LIB_PATH = APP_ROOT + "Frameworks/XP3Compat.dylib"
@@ -202,8 +202,6 @@ def inject_ipa(ipa_path, dylib_path, output_path):
             raise InjectionError("Unsupported application identity or version")
         executable_path = APP_ROOT + "XP3Player"
         original = source.read(executable_path)
-        if sha256(original) != EXPECTED_SHA256:
-            raise InjectionError("Unsupported executable SHA-256; this patch is bound to the supplied IPA")
         patched, report = inject_macho(original)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=".xp3compat-", suffix=".ipa", dir=output_path.parent)

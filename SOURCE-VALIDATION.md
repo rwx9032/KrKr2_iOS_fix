@@ -21,7 +21,7 @@ original IPA, games, saves, certificates, secrets, or full crash logs were read.
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Result: `Ran 33 tests in 0.147s` — `OK (skipped=2)`, **31 passed, 2 skipped,
+Result: `Ran 33 tests in 0.033s` — `OK (skipped=2)`, **31 passed, 2 skipped,
 0 failures, 0 errors**, exit 0. The two skips are opt-in real-IPA tests:
 
 - `test_inject.IPATests.test_real_supplied_ipa` (needs `XP3COMPAT_ORIGINAL_IPA`
@@ -69,7 +69,9 @@ duplicate `-lobjc` linker warning were emitted; neither is an error.
 - `tools/inject_ipa.py` CLI is `ipa dylib output`; README uses that exact order.
 - `tools/clone_ipa.py` CLI is `inputIPA outputIPA` with optional
   `--bundle-id`/`--display-name`; README uses the positional form correctly.
-- README SHA-256 `7db2db73…a7d5` matches `inject_ipa.py:EXPECTED_SHA256`.
+- README no longer treats a fixed SHA-256 as a support boundary; the injector records the
+  input executable's actual hash in its report only. Same-version decrypted/signed copies may
+  have different bytes and hashes while still passing the identity/version/Mach-O/ZIP checks.
 - README's test command works as written (with or without `-v`).
 - README states that fullscreen, window scaling, and iPhone Duo folding
   adaptation are **still under investigation**, and that the repository must
@@ -81,6 +83,19 @@ duplicate `-lobjc` linker warning were emitted; neither is an error.
 `tests/test_clone_ipa.py`: corrected the stale copied-layout docstring from
 `outputs/XP3Compat/tests` to the repository-relative `tests` path and removed an
 obsolete `DEVELOPER_DIR` line. No production or test logic was changed.
+
+### 2026-10-21 hash-record-only update
+
+- `tools/inject_ipa.py`: removed the hard-coded executable-hash constant and its reject guard;
+  the existing report field `original_executable_sha256` remains for traceability.
+- `tests/test_inject.py`: removed the mock hash constant; the old rejection test now
+  injects two distinct valid Mach-O fixtures and verifies each report hash plus payload
+  preservation. The optional real-IPA test compares against the input archive's actual
+  executable hash instead of a constant.
+- `README.md` / `README.zh-CN.md`: removed fixed-hash support wording and documented that
+  same-version decrypted/signed copies may differ; this is not a claim of arbitrary-version support.
+- Preserved existing Mach-O/arm64/unencrypted, injection-space, identity/version, ZIP safety,
+  no-overwrite, and no-UUID/alternate-binding checks.
 
 ## Scope boundaries
 

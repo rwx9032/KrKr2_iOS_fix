@@ -158,8 +158,7 @@ class IPATests(unittest.TestCase):
                 archive.writestr(*extra)
 
     def patch(self):
-        with mock.patch.object(inj, "EXPECTED_SHA256", inj.sha256(self.exe)):
-            return inj.inject_ipa(self.ipa, self.lib, self.output)
+        return inj.inject_ipa(self.ipa, self.lib, self.output)
 
     def test_archive_roundtrip_preserves_info_resources_permissions(self):
         before = self.ipa.read_bytes()
@@ -173,10 +172,25 @@ class IPATests(unittest.TestCase):
             self.assertFalse(any(inj.signature_residue(n) for n in archive.namelist()))
         self.assertTrue(report["requires_resigning"])
 
-    def test_hash_binding(self):
-        with self.assertRaisesRegex(inj.InjectionError, "SHA-256"):
-            inj.inject_ipa(self.ipa, self.lib, self.output)
-        self.assertFalse(self.output.exists())
+    def test_distinct_valid_macho_inputs_both_inject_with_recorded_hashes(self):
+        # Same supported app/version, but two valid executables whose bytes (and
+        # therefore SHA-256) differ, as independently decrypted/signed copies do.
+        originals = [fixture(padding=128), fixture(padding=136)]
+        self.assertEqual(len({inj.sha256(data) for data in originals}), 2)
+        for index, original in enumerate(originals):
+            with self.subTest(index=index, original_sha256=inj.sha256(original)):
+                self.exe = original
+                self.write_ipa()
+                output = self.root / ("distinct-%d.ipa" % index)
+                report = inj.inject_ipa(self.ipa, self.lib, output)
+                self.assertEqual(report["original_executable_sha256"], inj.sha256(original))
+                self.assertTrue(report["payload_bytes_unchanged"])
+                with zipfile.ZipFile(output) as archive:
+                    patched = archive.read(inj.APP_ROOT + "XP3Player")
+                self.assertEqual(len(patched), len(original))
+                parsed = inj.parse_macho(patched, 2)
+                self.assertEqual(parsed[2], [inj.INSTALL_NAME])
+                self.assertEqual(original[parsed[3]:], patched[parsed[3]:])
 
     def test_source_zipinfo_offsets_not_mutated_by_output(self):
         # Dropping an early signature entry moves later members in the output.
@@ -224,9 +238,10 @@ class IPATests(unittest.TestCase):
     def test_real_supplied_ipa(self):
         report = inj.inject_ipa(os.environ["XP3COMPAT_ORIGINAL_IPA"],
                                 os.environ["XP3COMPAT_DYLIB"], self.output)
-        self.assertEqual(report["original_executable_sha256"], inj.EXPECTED_SHA256)
-        self.assertTrue(report["payload_bytes_unchanged"])
         with zipfile.ZipFile(os.environ["XP3COMPAT_ORIGINAL_IPA"]) as original, zipfile.ZipFile(self.output) as patched:
+            self.assertEqual(report["original_executable_sha256"],
+                             inj.sha256(original.read(inj.APP_ROOT + "XP3Player")))
+            self.assertTrue(report["payload_bytes_unchanged"])
             for member in original.infolist():
                 if member.filename == inj.APP_ROOT + "XP3Player" or inj.signature_residue(member.filename):
                     continue

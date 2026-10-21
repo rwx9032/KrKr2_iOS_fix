@@ -26,11 +26,7 @@ python3 tools/inject_ipa.py /path/to/XP3Player.ipa XP3Compat.dylib /tmp/XP3Playe
 python3 tools/clone_ipa.py /tmp/XP3Player-injected.ipa /tmp/XP3Player-Fix.ipa
 ```
 
-注入器绑定本次已分析版本的原始主程序 SHA-256，拒绝其他二进制：
-
-```text
-7db2db73aec2357f7314db31759dbcff49c8e12280638c2065da4a9fe95da7d5
-```
+注入器会把输入主程序的实际 SHA-256 写入 JSON 报告，供完整性追溯；不再用固定哈希把注入绑定到某一份二进制。同一个 XP3Player 1.3.11 的不同砸壳／签名副本可能字节不同、哈希也不同，仍可处理。仍会校验应用标识与版本、Mach-O arm64／未加密、注入空间、ZIP 安全与不覆盖输入；这不表示支持任意版本或任意程序。
 
 最终 IPA 需要重新签名，主程序和内嵌 dylib 必须一起签。iPhone／iPad 安装还需要自己的有效签名与配置；Mac 的 ad-hoc 签名不等于真机安装签名。共存版使用独立数据容器，不会自动迁移原版的游戏和存档。
 
