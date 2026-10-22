@@ -1,5 +1,7 @@
 # XP3Compat — XP3Player 弹窗兼容插件
 
+> 当前分支：`experimental/iphone-duo`。这里保留 iPhone Duo 的显示、Scene 和窗口迁移研究源码，尚未完成适配。普通 iPhone、iPad 和 PlayCover 的 0.3 路线在 [`main`](https://github.com/rwx9032/KrKr2_iOS_fix/tree/main)。实验进度、构建方法与边界见 [Diagnostics/README.zh-CN.md](Diagnostics/README.zh-CN.md)。
+
 为 XP3Player 1.3.11（15，arm64）制作的 Objective-C 注入插件，目标是修复新系统上的创建目录、删除确认和游戏消息／输入弹窗问题。适用目标包括 iOS、iPadOS 和 Mac 上的 PlayCover。
 
 本仓库发布插件源码、注入／共存打包工具及测试，不包含 XP3Player 原程序、IPA、游戏、存档、签名证书或预编译插件。请自行准备有权使用的原始程序。
@@ -12,7 +14,7 @@
 - 仅对插件当前活动的原生模态窗口放行被 PlayTools 本地事件监视器消费的鼠标事件，不修改持久按键映射设置。
 - 提供独立 Bundle ID `tvp.XP3Player.Compat`（显示名 `XP3Player Fix`），可与原版共存。
 
-**当前发布的是弹窗修复候选源码，目标为普通 iPhone、iPad 和 PlayCover；iPhone Duo 折叠屏适配不在本次范围内。** 保留原程序的窗口与启动行为，不纳入 Duo 实验中的 SDK 改标、Scene 接入或窗口迁移。插件核心没有固定设备尺寸、强制旋转或游戏拉伸补丁；全屏和窗口缩放仍不能视为已普遍修复。
+**`Sources/XP3Compat.m` 保持与 main 一致；新增实验全部位于 `Diagnostics/`，不会由默认 `build.sh` 编入正式插件。** Duo 的 SDK／Scene／窗口迁移候选独立构建且默认关闭，不能把本分支视为可直接交付的 Duo 修复。全屏、方向和窗口缩放尚未解决。
 
 已完成 PlayCover 实际弹窗测试，以及实际程序转换副本在 iPhone／iPad 模拟器上的部分 UIKit 测试；物理 iPhone／iPad 尚未验证。自动测试使用真实 Foundation 与模拟 UIKit，不能代替真机测试。PlayTools 的主文件界面假触摸问题属于仍需区分的输入路径。
 

@@ -11,3 +11,8 @@ tests/*.xp3
 tests/startup.tjs
 work/
 outputs/
+Diagnostics/**/build/*
+!Diagnostics/**/build/*.sh
+Diagnostics/**/records/
+Diagnostics/**/*.json
+*.log
