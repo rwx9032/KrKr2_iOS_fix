@@ -155,3 +155,9 @@ Fix 版的数据目录是独立的，参考“迁移数据”一节重新导入�
 
 - [技术说明](docs/TECHNICAL.zh-CN.md)：修复原理、构建选项和测试命令。
 - [experimental/iphone-duo 分支](https://github.com/rwx9032/KrKr2_iOS_fix/tree/experimental/iphone-duo)：iPhone Duo 显示实验。
+
+## 免责声明
+
+本项目为独立的第三方兼容修复项目，与 XP3Player 原作者及相关游戏厂商无隶属或合作关系。原软件、游戏及相关资源的版权归各自权利人所有，请使用合法取得的程序与游戏文件。
+
+本项目按现状提供，不保证在所有设备、系统版本和游戏上正常运行。安装、重签或测试前，请备份游戏和存档，并自行评估使用风险。
