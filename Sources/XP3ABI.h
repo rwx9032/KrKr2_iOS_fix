@@ -23,6 +23,7 @@ extern void dispatch_async(dispatch_queue_t, dispatch_block_t);
 extern void dispatch_sync(dispatch_queue_t, dispatch_block_t);
 extern Class objc_getClass(const char *);
 extern Class object_getClass(id);
+extern Class class_getSuperclass(Class);
 extern Method class_getInstanceMethod(Class, SEL);
 extern Method class_getClassMethod(Class, SEL);
 extern BOOL class_addMethod(Class, SEL, IMP, const char *);
@@ -30,6 +31,8 @@ extern const char *method_getTypeEncoding(Method);
 extern IMP method_getImplementation(Method);
 extern IMP method_setImplementation(Method, IMP);
 extern unsigned int method_getNumberOfArguments(Method);
+extern void method_getReturnType(Method, char *, unsigned long);
+extern void method_getArgumentType(Method, unsigned int, char *, unsigned long);
 extern id objc_getAssociatedObject(id, const void *);
 extern void objc_setAssociatedObject(id, const void *, id, NSUInteger);
 #define OBJC_ASSOCIATION_RETAIN_NONATOMIC 1
@@ -45,6 +48,7 @@ __attribute__((objc_root_class))
 + (id)alloc;
 + (Class)class;
 - (id)init;
+- (id)copy;
 - (void)performSelector:(SEL)selector withObject:(id)object afterDelay:(NSTimeInterval)delay;
 @end
 @class NSString, NSDate, NSArray, UIWindow, UIViewController, UIAlertController;
@@ -58,7 +62,26 @@ __attribute__((objc_root_class))
 @interface NSMutableArray<ObjectType> : NSArray<ObjectType>
 + (id)array;
 - (void)addObject:(ObjectType)object;
+- (void)removeObjectAtIndex:(NSUInteger)index;
 @end
+@interface NSSet<ObjectType> : NSObject
+- (NSArray<ObjectType> *)allObjects;
+@end
+@interface NSMutableSet<ObjectType> : NSSet<ObjectType>
++ (id)set;
+- (void)addObject:(ObjectType)object;
+@end
+@interface NSMapTable<KeyType, ObjectType> : NSObject
++ (id)weakToStrongObjectsMapTable;
+- (ObjectType)objectForKey:(KeyType)key;
+- (void)setObject:(ObjectType)object forKey:(KeyType)key;
+- (void)removeObjectForKey:(KeyType)key;
+@end
+typedef const struct __CFRunLoop *CFRunLoopRef;
+extern CFRunLoopRef CFRunLoopGetMain(void);
+extern const void *kCFRunLoopDefaultMode;
+extern void CFRunLoopPerformBlock(CFRunLoopRef, const void *, void (^)(void));
+extern void CFRunLoopWakeUp(CFRunLoopRef);
 @interface NSBundle : NSObject
 + (NSBundle *)mainBundle;
 @property(readonly) NSString *bundleIdentifier;
@@ -79,6 +102,13 @@ extern void NSLog(NSString *, ...);
 @interface UIView : NSObject
 @property(readonly) UIWindow *window;
 @property(readonly) BOOL isHidden;
+- (CGPoint)convertPoint:(CGPoint)point toView:(UIView *)view;
+@end
+@interface UITouch : NSObject
+@property(readonly) UIView *view;
+@property(readonly) CGFloat force;
+@property(readonly) CGFloat maximumPossibleForce;
+- (CGPoint)locationInView:(UIView *)view;
 @end
 @interface UIViewController : NSObject
 @property(readonly) UIViewController *presentedViewController;

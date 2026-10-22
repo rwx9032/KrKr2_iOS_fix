@@ -25,3 +25,5 @@ xcrun clang -isysroot "$SDK" -fobjc-arc -fblocks -Wall -Wextra \
     -Werror=implicit-function-declaration -framework Foundation \
     "$ROOT/tests/NativeInputTests.m" -o "$BUILD_DIR/native-input-tests"
 "$BUILD_DIR/native-input-tests"
+
+XP3_ENGINE_TEST_BUILD_DIR="$BUILD_DIR/engine-scheduling" bash "$ROOT/tests/run_engine_scheduling_tests.sh"

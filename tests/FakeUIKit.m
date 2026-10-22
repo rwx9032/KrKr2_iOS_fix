@@ -5,6 +5,11 @@ NSUInteger XP3FakePresentCount;
 UIAlertController *XP3FakeLastPresentedAlert;
 
 @implementation UIView
+- (CGPoint)convertPoint:(CGPoint)point toView:(UIView *)view { (void)view; return point; }
+@end
+
+@implementation UITouch
+- (CGPoint)locationInView:(UIView *)view { (void)view; return self.point; }
 @end
 
 @implementation UIViewController

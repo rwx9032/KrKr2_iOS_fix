@@ -2,11 +2,20 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <dispatch/dispatch.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 @class UIWindow, UIAlertView, UIAlertController;
 @interface UIView : NSObject
 @property(weak) UIWindow *window;
 @property(getter=isHidden) BOOL hidden;
+- (CGPoint)convertPoint:(CGPoint)point toView:(UIView *)view;
+@end
+@interface UITouch : NSObject
+@property(weak) UIView *view;
+@property CGPoint point;
+@property CGFloat force;
+@property CGFloat maximumPossibleForce;
+- (CGPoint)locationInView:(UIView *)view;
 @end
 
 @interface UIViewController : NSObject

@@ -7,6 +7,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <dispatch/dispatch.h>
+#import <CoreFoundation/CoreFoundation.h>
 @interface NSObject (XP3LegacyCallback)
 - (void)alertView:(UIAlertView *)alert clickedButtonAtIndex:(NSInteger)index;
 @end
@@ -14,6 +15,7 @@
 #include <stdarg.h>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#include "XP3EngineScheduling.h"
 
 // The original DAFRunLoop dereferences CFRunLoop internals at fixed offsets.
 // Never call its original IMP: those offsets changed across OS releases.
@@ -346,6 +348,7 @@ void XP3CompatInstall(void) {
     if (installed) return;
     installed = YES;
     XP3InstallAppKitInputBridge();
+    XP3InstallEngineScheduling(YES, YES);
     Class loop = objc_getClass("DAFRunLoop");
     Method run = class_getInstanceMethod(loop, @selector(runMode:beforeDate:));
     if (run && method_getNumberOfArguments(run) == 4) {
