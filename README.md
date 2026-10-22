@@ -54,7 +54,7 @@ python3 tools/inject_ipa.py "/path/to/XP3Player.ipa" XP3Compat.dylib /tmp/XP3Pla
 
 - 把 `/path/to/XP3Player.ipa` 换成你自己的 IPA 路径，路径里有空格时保留双引号。
 - 输出文件名必须是尚未存在的新名字，脚本不会覆盖同名文件。重复执行时换一个名字（例如 `XP3Player-injected-2.ipa`），后续命令的输入路径也要对应修改。
-- 这一步只做注入，共存身份在下一步设置。
+- 这一步完成插件注入和 iPad 全屏配置，共存身份在下一步设置。
 
 ### 5. 生成共存包
 
@@ -70,7 +70,7 @@ python3 tools/clone_ipa.py /tmp/XP3Player-injected.ipa /tmp/XP3Player-Fix.ipa
 
 用你的签名工具导入 `/tmp/XP3Player-Fix.ipa`，按工具的正常流程配置证书并签名。
 
-签名时，**主应用和内嵌的 `Frameworks/XP3Compat.dylib` 要一起重签**，漏掉内嵌库会导致应用启动失败。
+重签时保留 Bundle ID `tvp.XP3Player.Compat`，插件按此标识启用。**主应用和内嵌的 `Frameworks/XP3Compat.dylib` 要一起重签**，漏掉内嵌库会导致应用启动失败。
 
 签好后正常安装。如果系统提示应用未受信任，按提示在设置里信任你的证书。完成后桌面上会出现 XP3Player Fix 的图标。
 
@@ -109,8 +109,8 @@ XP3Player Fix 和原版各有各的数据目录。请用当初向原版导入游
 
 仓库提供插件源码、打包工具和测试脚本。XP3Player 的 IPA 需要自行准备（1.3.11，build 15，arm64，已解密）。
 
-- **main**：主线，即 0.3 路线。保持原版的显示和启动行为，只修复上面列出的系统交互问题。`bash build.sh` 默认构建的就是它。
-- **[experimental/iphone-duo](https://github.com/rwx9032/KrKr2_iOS_fix/tree/experimental/iphone-duo)**：iPhone Duo 的显示适配实验。模拟器里的展开与折叠、游戏画面比例、点击和弹窗输入已经能正常工作，适配仍在进行，尚未合并进主线。
+- **main**：主线，即 0.3 路线。修复系统弹窗，并支持 iPad 文件管理界面的全屏显示。`bash build.sh` 默认构建的就是它。
+- **[experimental/iphone-duo](https://github.com/rwx9032/KrKr2_iOS_fix/tree/experimental/iphone-duo)**：iPhone Duo 的显示与折叠适配实验。部分配置已通过模拟器验证，最新进展和测试范围见该分支说明。
 
 ## 常见问题
 
@@ -127,7 +127,7 @@ Fix 版的数据目录是独立的，参考“迁移数据”一节重新导入�
 没有，请自行准备 IPA 并按上面的步骤构建。
 
 **全屏、旋转这些显示问题解决了吗？**
-显示适配在 `experimental/iphone-duo` 分支进行，目前已有模拟器上的测试进展。
+iPad 文件管理界面的全屏显示已在主分支修复，游戏画面保持原有比例。Duo 的展开、折叠与显示适配在 `experimental/iphone-duo` 分支继续进行。
 
 **PlayCover 提示应用未签名？**
 确认导入的是最终生成的 `/tmp/XP3Player-Fix-PlayCover.ipa`。如果报 `code object is not signed at all`，回到第 6 步的 Mac 部分，逐条检查签名命令和打包命令。
