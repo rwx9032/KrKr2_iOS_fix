@@ -35,14 +35,16 @@ class CloneIPATests(unittest.TestCase):
         self.resource = b"resource bytes must survive cloning"
 
     def write_ipa(self, bundle_id=clone.ORIGINAL_BUNDLE_ID, extra_members=(),
-                  second_app=False):
-        info = plistlib.dumps({
+                  second_app=False, plist_overrides=None):
+        properties = {
             "CFBundleIdentifier": bundle_id,
             "CFBundleDisplayName": "XP3Player",
             "CFBundleName": "XP3Player",
             "CFBundleExecutable": "XP3Player",
             "CFBundleShortVersionString": "1.3.11",
-        })
+        }
+        properties.update(plist_overrides or {})
+        info = plistlib.dumps(properties)
         with zipfile.ZipFile(self.input_ipa, "w") as archive:
             root = "Payload/XP3Player.app/"
             archive.writestr(root + "Info.plist", info)
@@ -81,6 +83,46 @@ class CloneIPATests(unittest.TestCase):
         self.assertEqual(report["output_ipa_sha256"], clone._sha256_file(self.output_ipa))
         self.assertTrue(report["requires_resigning"])
         self.assertGreaterEqual(len(report["removed_signature_members"]), 3)
+
+    def test_ipad_launch_keeps_legacy_iphone_settings_and_payload(self):
+        legacy = {"UIDeviceFamily": [1, 2], "MinimumOSVersion": "15.0",
+                  "UIRequiresFullScreen": True,
+                  "UILaunchImageFile": "LaunchImage",
+                  "UILaunchImages": [{"UILaunchImageName": "Legacy"}],
+                  "UISupportedInterfaceOrientations": ["UIInterfaceOrientationLandscapeLeft"]}
+        self.write_ipa(plist_overrides=legacy)
+        report = clone.clone_ipa(self.input_ipa, self.output_ipa)
+        with zipfile.ZipFile(self.input_ipa) as source, zipfile.ZipFile(self.output_ipa) as target:
+            info = plistlib.loads(target.read(report["info_plist"]))
+            self.assertEqual(info["UILaunchScreen~ipad"], {})
+            self.assertNotIn("UILaunchScreen", info)
+            # The generic orientation key is honored for iPad; the clone must
+            # not synthesize an orientation override while fixing launch images.
+            self.assertNotIn("UISupportedInterfaceOrientations~ipad", info)
+            for key, value in legacy.items():
+                self.assertEqual(info[key], value)
+            for member in source.infolist():
+                if member.filename != report["info_plist"] and not clone.signature_residue(member.filename):
+                    self.assertEqual(source.read(member), target.read(member.filename))
+        self.assertTrue(report["ipad_launch_screen_added"])
+
+    def test_iphone_only_and_existing_modern_launch_are_preserved(self):
+        for settings in ({"UIDeviceFamily": [1]},
+                         {"UIDeviceFamily": [1, 2], "UILaunchScreen": {"UIColorName": "Brand"}},
+                         {"UIDeviceFamily": [1, 2], "UILaunchScreen~ipad": {"UIImageName": "Logo"}},
+                         {"UIDeviceFamily": [1, 2], "UILaunchStoryboardName": "Existing"},
+                         {"UIDeviceFamily": [1, 2], "UILaunchStoryboardName~ipad": "ExistingPad"}):
+            with self.subTest(settings=settings):
+                self.write_ipa(plist_overrides=settings)
+                output = self.root / ("preserved-" + str(len(list(self.root.glob("preserved-*")))) + ".ipa")
+                report = clone.clone_ipa(self.input_ipa, output)
+                with zipfile.ZipFile(output) as target:
+                    info = plistlib.loads(target.read(report["info_plist"]))
+                    for key, value in settings.items():
+                        self.assertEqual(info[key], value)
+                    if "UILaunchScreen~ipad" not in settings:
+                        self.assertNotIn("UILaunchScreen~ipad", info)
+                self.assertFalse(report["ipad_launch_screen_added"])
 
     def test_wrong_source_bundle_id_is_rejected_without_output(self):
         self.write_ipa(bundle_id="com.example.other")

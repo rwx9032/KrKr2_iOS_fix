@@ -24,6 +24,10 @@ CPU_ARM64 = 0x0100000C
 MH_EXECUTE, MH_DYLIB = 2, 6
 LC_SEGMENT_64, LC_LOAD_DYLIB = 0x19, 0xC
 LC_CODE_SIGNATURE, LC_ENCRYPTION_INFO_64 = 0x1D, 0x2C
+LC_VERSION_MIN_IPHONEOS, LC_BUILD_VERSION = 0x25, 0x32
+IOS_PLATFORMS = (2, 7)  # iOS, iOS Simulator
+PLATFORM_NAMES = {1: "macos", 2: "ios", 6: "mac-catalyst", 7: "ios-simulator"}
+MINIMUM_SDK_VERSION = 26 << 16  # 26.0
 
 
 class InjectionError(ValueError):
@@ -32,6 +36,86 @@ class InjectionError(ValueError):
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def plist_bytes(plist, original_bytes):
+    # Keep binary plists binary. For XML plists, plistlib's canonical output
+    # is deterministic while preserving the rest of the archive at member level.
+    fmt = plistlib.FMT_BINARY if original_bytes.startswith(b"bplist") else plistlib.FMT_XML
+    return plistlib.dumps(plist, fmt=fmt, sort_keys=False)
+
+
+def configure_ipad_launch(plist):
+    """Avoid selecting a legacy 4:3 iPad launch image.
+
+    A device-qualified UILaunchScreen dictionary lets iPadOS generate the
+    launch surface at the current display size instead of resolving the
+    legacy UILaunchImageFile/UILaunchImages entries.  iPhone launch metadata
+    and all orientation/full-screen keys are left untouched.  This function
+    does not rotate the interface or change the runtime window; the
+    UIRequiresFullScreen compatibility mode still controls presentation.
+    Existing modern launch configurations take precedence over the generated
+    default.  XP3Player 1.3.11 requires iOS 15, which supports UILaunchScreen.
+    """
+    families = plist.get("UIDeviceFamily", [])
+    if not isinstance(families, list) or 2 not in families:
+        return False
+    keys = ("UILaunchScreen", "UILaunchScreen~ipad",
+            "UILaunchStoryboardName", "UILaunchStoryboardName~ipad")
+    if any(key in plist for key in keys):
+        return False
+    plist["UILaunchScreen~ipad"] = {}
+    return True
+
+
+def _version_string(value):
+    major, minor, patch = (value >> 16) & 0xFFFF, (value >> 8) & 0xFF, value & 0xFF
+    return f"{major}.{minor}" if not patch else f"{major}.{minor}.{patch}"
+
+
+def _sdk_record(command, platform, before, after, updated, reason=None):
+    record = {"command": command, "platform": platform,
+              "before": _version_string(before), "after": _version_string(after),
+              "updated": updated}
+    if reason:
+        record["reason"] = reason
+    return record
+
+
+def _patch_sdk_command(cmd, raw):
+    """Raise an existing iOS-family SDK field when eligible; keep other bytes."""
+    if cmd == LC_BUILD_VERSION:
+        platform = struct.unpack_from("<I", raw, 8)[0]
+        command = "LC_BUILD_VERSION"
+        platform_name = PLATFORM_NAMES.get(platform, "platform-%d" % platform)
+        sdk_offset = 16
+    else:
+        platform = None
+        command = "LC_VERSION_MIN_IPHONEOS"
+        platform_name = "ios"
+        sdk_offset = 12
+    sdk = struct.unpack_from("<I", raw, sdk_offset)[0]
+    if platform is not None and platform not in IOS_PLATFORMS:
+        return raw, _sdk_record(command, platform_name, sdk, sdk, False,
+                                "unsupported platform")
+    if sdk >= MINIMUM_SDK_VERSION:
+        return raw, _sdk_record(command, platform_name, sdk, sdk, False)
+    changed = bytearray(raw)
+    struct.pack_into("<I", changed, sdk_offset, MINIMUM_SDK_VERSION)
+    return bytes(changed), _sdk_record(command, platform_name, sdk,
+                                       MINIMUM_SDK_VERSION, True)
+
+
+def _patch_sdk_commands(commands):
+    kept, records = [], []
+    for cmd, raw in commands:
+        if cmd == LC_CODE_SIGNATURE:
+            continue
+        if cmd in (LC_BUILD_VERSION, LC_VERSION_MIN_IPHONEOS):
+            raw, record = _patch_sdk_command(cmd, raw)
+            records.append(record)
+        kept.append(raw)
+    return kept, records
 
 
 def parse_macho(data, expected_type):
@@ -74,6 +158,15 @@ def parse_macho(data, expected_type):
                     if offset < end or offset + length > len(data):
                         raise InjectionError("Invalid file-backed section bounds")
                     first_data = min(first_data, offset)
+        elif cmd == LC_BUILD_VERSION:
+            if size < 24:
+                raise InjectionError("Truncated build-version command")
+            ntools = struct.unpack_from("<I", raw, 20)[0]
+            if size != 24 + 8 * ntools:
+                raise InjectionError("Invalid build-version tool table")
+        elif cmd == LC_VERSION_MIN_IPHONEOS:
+            if size != 16:
+                raise InjectionError("Invalid version-min command")
         elif cmd == LC_ENCRYPTION_INFO_64:
             if size < 24:
                 raise InjectionError("Truncated encryption command")
@@ -113,7 +206,8 @@ def inject_macho(data):
     size = (24 + len(name) + 7) & ~7
     newcmd = struct.pack("<6I", LC_LOAD_DYLIB, size, 24, 0, 0x10000, 0x10000)
     newcmd += name + b"\0" * (size - 24 - len(name))
-    kept = [raw for cmd, raw in commands if cmd != LC_CODE_SIGNATURE]
+    # This raises the declared SDK only; it does not rebuild the executable.
+    kept, sdk_versions = _patch_sdk_commands(commands)
     new_table = b"".join(kept) + newcmd
     new_end = 32 + len(new_table)
     if new_end > first_data:
@@ -132,6 +226,8 @@ def inject_macho(data):
         "commands_before": header[4], "commands_after": parsed[0][4],
         "header_padding_remaining": first_data - new_end,
         "code_signature_commands_removed": sum(c == LC_CODE_SIGNATURE for c, _ in commands),
+        "sdk_versions": sdk_versions,
+        "sdk_version_updated": any(record["updated"] for record in sdk_versions),
         "payload_bytes_unchanged": True,
     }
 
@@ -191,15 +287,20 @@ def inject_ipa(ipa_path, dylib_path, output_path):
         validate_zip(infos)
         if any(info.filename == LIB_PATH for info in infos):
             raise InjectionError("Archive already contains XP3Compat.dylib")
+        info_path = APP_ROOT + "Info.plist"
         app_infos = [info.filename for info in infos if info.filename.startswith("Payload/")
                      and info.filename.count("/") == 2 and info.filename.endswith(".app/Info.plist")]
-        if app_infos != [APP_ROOT + "Info.plist"]:
+        if app_infos != [info_path]:
             raise InjectionError("Expected exactly Payload/XP3Player.app/Info.plist")
-        info = plistlib.loads(source.read(APP_ROOT + "Info.plist"))
+        info_bytes = source.read(info_path)
+        info = plistlib.loads(info_bytes)
         if (info.get("CFBundleIdentifier") != "tvp.XP3Player"
                 or info.get("CFBundleExecutable") != "XP3Player"
                 or info.get("CFBundleShortVersionString") != "1.3.11"):
             raise InjectionError("Unsupported application identity or version")
+        ipad_launch_added = configure_ipad_launch(info)
+        updated_info_bytes = plist_bytes(info, info_bytes) if ipad_launch_added else info_bytes
+        info_plist_unchanged = updated_info_bytes == info_bytes
         executable_path = APP_ROOT + "XP3Player"
         original = source.read(executable_path)
         patched, report = inject_macho(original)
@@ -212,7 +313,12 @@ def inject_ipa(ipa_path, dylib_path, output_path):
                     if signature_residue(member.filename):
                         removed.append(member.filename)
                         continue
-                    contents = patched if member.filename == executable_path else source.read(member)
+                    if member.filename == executable_path:
+                        contents = patched
+                    elif member.filename == info_path:
+                        contents = updated_info_bytes
+                    else:
+                        contents = source.read(member)
                     # writestr updates header_offset and other fields on ZipInfo.
                     # The source retains these same objects in its name lookup;
                     # preserve them so subsequent source.read() calls stay valid.
@@ -224,8 +330,8 @@ def inject_ipa(ipa_path, dylib_path, output_path):
                 target.writestr(member, library)
             with zipfile.ZipFile(temporary) as target:
                 bad = target.testzip()
-                if bad or target.read(APP_ROOT + "Info.plist") != source.read(APP_ROOT + "Info.plist"):
-                    raise InjectionError("Output ZIP integrity or Info.plist preservation check failed")
+                if bad or target.read(info_path) != updated_info_bytes:
+                    raise InjectionError("Output ZIP integrity or Info.plist check failed")
                 if target.read(LIB_PATH) != library:
                     raise InjectionError("Output dylib integrity check failed")
             # A hard link atomically publishes without replacing a file created by a concurrent process.
@@ -237,7 +343,9 @@ def inject_ipa(ipa_path, dylib_path, output_path):
         "original_executable_sha256": sha256(original),
         "patched_executable_sha256": sha256(patched), "dylib_sha256": sha256(library),
         "output_ipa_sha256": sha256(output_path.read_bytes()),
-        "removed_signature_members": removed, "info_plist_unchanged": True,
+        "removed_signature_members": removed,
+        "ipad_launch_screen_added": ipad_launch_added,
+        "info_plist_unchanged": info_plist_unchanged,
         "requires_resigning": True,
     })
     return report

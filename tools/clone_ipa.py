@@ -2,8 +2,8 @@
 """Make a separately installable XP3Player IPA from an existing IPA.
 
 The source application must have the original ``tvp.XP3Player`` bundle
-identifier.  This tool only changes the root application's plist and removes
-stale signing material; it never signs the archive.  The resulting IPA still
+identifier.  This tool changes the root application's identity and iPad launch
+configuration, and removes stale signing material.  The resulting IPA still
 needs the application and its embedded libraries to be signed together.
 
 Only the Python standard library is used.  The ZIP safety checks and signing
@@ -28,7 +28,8 @@ import zipfile
 # module usable from the repository's unittest loader, which imports scripts
 # by filename rather than putting ``tools`` on sys.path.
 try:
-    from inject_ipa import InjectionError, signature_residue, validate_zip
+    from inject_ipa import (InjectionError, configure_ipad_launch, plist_bytes,
+                            signature_residue, validate_zip)
 except ModuleNotFoundError as exc:
     if exc.name != "inject_ipa":
         raise
@@ -39,6 +40,8 @@ except ModuleNotFoundError as exc:
     _inject_module = importlib.util.module_from_spec(_inject_spec)
     _inject_spec.loader.exec_module(_inject_module)
     InjectionError = _inject_module.InjectionError
+    configure_ipad_launch = _inject_module.configure_ipad_launch
+    plist_bytes = _inject_module.plist_bytes
     signature_residue = _inject_module.signature_residue
     validate_zip = _inject_module.validate_zip
 
@@ -99,14 +102,6 @@ def _app_root_and_info(infos):
     return app_root, info_path
 
 
-def _plist_bytes(plist, original_bytes):
-    # Keep binary plists binary.  For XML plists, plistlib's canonical output
-    # is deterministic while preserving the rest of the archive byte-for-byte
-    # at the member-content level.
-    fmt = plistlib.FMT_BINARY if original_bytes.startswith(b"bplist") else plistlib.FMT_XML
-    return plistlib.dumps(plist, fmt=fmt, sort_keys=False)
-
-
 def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
               display_name=DEFAULT_DISPLAY_NAME):
     """Clone *input_ipa* to *output_ipa* with a new application identity.
@@ -157,7 +152,8 @@ def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
         updated["CFBundleIdentifier"] = bundle_id
         updated["CFBundleDisplayName"] = display_name
         updated["CFBundleName"] = display_name
-        updated_info_bytes = _plist_bytes(updated, original_info_bytes)
+        ipad_launch_added = configure_ipad_launch(updated)
+        updated_info_bytes = plist_bytes(updated, original_info_bytes)
 
         # Do not create the output parent until all input validation above has
         # succeeded.  This keeps rejected inputs side-effect free.
@@ -205,6 +201,7 @@ def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
         "app_root": app_root,
         "info_plist": info_path,
         "removed_signature_members": removed,
+        "ipad_launch_screen_added": ipad_launch_added,
         "requires_resigning": True,
     }
 
