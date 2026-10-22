@@ -14,9 +14,9 @@
 - 仅对插件当前活动的原生模态窗口放行被 PlayTools 本地事件监视器消费的鼠标事件，不修改持久按键映射设置。
 - 提供独立 Bundle ID `tvp.XP3Player.Compat`（显示名 `XP3Player Fix`），可与原版共存。
 - 将引擎触摸与帧回调调度到 UIKit 更新阶段之外，使旧引擎的同步弹窗等待能够正常返回。
-- 补齐 iPad 的现代启动配置和主程序 SDK 声明，使文件管理界面使用完整显示区域。
+- 注入工具调整 iPad 主程序的 SDK 声明，注入／共存打包工具补齐现代 iPad 启动配置，使文件管理界面使用完整显示区域。
 
-**`Sources/XP3Compat.m` 保持与 main 一致；实验位于 `Diagnostics/`，默认 `build.sh` 构建正式插件。** Duo 的 SDK／Scene／窗口迁移候选独立构建且默认关闭。显示与折叠测试结果见 [实验记录](../Diagnostics/README.zh-CN.md)。
+**`Sources/XP3Compat.m` 保持与 main 一致；实验位于 `Diagnostics/`，默认 `build.sh` 构建正式插件。** Duo 的 Scene／窗口迁移候选在 `Diagnostics/` 下独立构建且默认关闭，主程序 SDK 与启动配置需另行配套。显示与折叠测试结果见 [实验记录](../Diagnostics/README.zh-CN.md)。
 
 ## 修复原理
 
@@ -45,7 +45,7 @@ PlayCover 环境中，插件在运行时查找 AppKit 的公开类，并使用 `
 
 ### 适配 iPad 的完整显示区域
 
-打包工具对低于 26.0 的主程序 SDK 声明设置 26.0 下限，并在缺少现代 iPad 启动配置时补充 `UILaunchScreen~ipad = {}`。两者配合，使旧应用获得当前窗口的完整显示区域。
+`tools/inject_ipa.py` 对低于 26.0 的主程序 SDK 声明设置 26.0 下限；`tools/inject_ipa.py` 与 `tools/clone_ipa.py` 在缺少现代 iPad 启动配置时补充 `UILaunchScreen~ipad = {}`。两者配合，使旧应用获得当前窗口的完整显示区域。
 
 处理同时支持 `LC_BUILD_VERSION` 与 `LC_VERSION_MIN_IPHONEOS`，保留原部署版本及加载命令之外的程序内容。已有的现代启动配置继续保留。此适配使用系统提供的显示区域，文件管理界面随窗口尺寸显示，游戏自身画布仍按原有比例呈现。
 
@@ -63,7 +63,9 @@ python3 tools/clone_ipa.py /tmp/XP3Player-injected.ipa /tmp/XP3Player-Fix.ipa
 
 最终 IPA 需要重新签名，主程序和内嵌 dylib 必须一起签。iPhone／iPad 安装还需要自己的有效签名与配置；Mac 的 ad-hoc 签名不等于真机安装签名。共存版使用独立数据容器，不会自动迁移原版的游戏和存档。
 
-`build.sh` 自动选择可用 SDK；可用 `XP3_BUILD_MODE=sdk` 或 `XP3_BUILD_MODE=minimal` 显式指定构建方式。最小 ABI 构建生成的链接桩仅用于链接，不应打进 IPA。
+插件仅在 `tvp.XP3Player` 和 `tvp.XP3Player.Compat` 下启用。使用 `clone_ipa.py --bundle-id` 自定义身份时，需同步修改 `Sources/XP3Compat.m` 的目标标识匹配条件并重新构建。重签工具应保留教程中的 Bundle ID。
+
+`build.sh` 默认以 `XP3_BUILD_MODE=auto` 自动选择可用 SDK；可用 `XP3_BUILD_MODE=sdk` 或 `XP3_BUILD_MODE=minimal` 显式指定构建方式。最小 ABI 构建生成的链接桩仅用于链接，不应打进 IPA。
 
 ## 测试
 

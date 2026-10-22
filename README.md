@@ -27,7 +27,7 @@ Duo 的 C1 实验组合已在模拟器中完成以下测试：
 
 ## 获取源码
 
-需要一台 Mac、Xcode、Python 3 和 Git。实验构建已在 Xcode 27.1 工具链下验证。
+需要一台 Mac、Xcode、Python 3 和 Git。实验构建已在 Xcode 27.1 工具链下验证；`build_sceneprobe.sh` 会校验 iPhoneSimulator SDK 为 27.1。
 
 ```bash
 git clone --branch experimental/iphone-duo --single-branch https://github.com/rwx9032/KrKr2_iOS_fix.git
@@ -46,7 +46,7 @@ python3 tools/clone_ipa.py /tmp/XP3Player-injected.ipa /tmp/XP3Player-Fix.ipa
 
 将 `/path/to/XP3Player.ipa` 换成实际 IPA 路径。两个输出路径都必须使用尚未占用的新文件名；脚本不会覆盖同名文件。
 
-构建得到的共存应用显示为 **XP3Player Fix**，Bundle ID 为 `tvp.XP3Player.Compat`。使用自己的签名工具，对主应用和内嵌的 `Frameworks/XP3Compat.dylib` 一起重签后安装，无需越狱。签名步骤及 PlayCover 安装方法见[主分支安装说明](https://github.com/rwx9032/KrKr2_iOS_fix/tree/main#安装)。
+构建得到的共存应用显示为 **XP3Player Fix**，Bundle ID 为 `tvp.XP3Player.Compat`。重签时保留此 Bundle ID，插件按此标识启用。使用自己的签名工具，对主应用和内嵌的 `Frameworks/XP3Compat.dylib` 一起重签后安装，无需越狱。签名步骤及 PlayCover 安装方法见[主分支安装说明](https://github.com/rwx9032/KrKr2_iOS_fix/tree/main#安装)。
 
 共存应用使用独立的数据目录。游戏和存档需通过文件共享或应用内的 Web 文件服务器重新导入。
 
