@@ -15,16 +15,28 @@
 ## 当前事实与未解决项
 
 - Duo 的旧 SDK 兼容模式与普通 iPhone 不同；仅将主程序 SDK 改标为 27.1 不能完成迁移，缺少 Scene 接入会触发系统检查。不得绕过该检查。
-- Scene 接入实验能够进入生命周期，但受控 iPad 对照仍出现侧转与大块黑区。它不是可用的通用显示修复。
+- 早期 Scene 接入在 iPad 对照中出现过侧转和黑区；2026-10-22 对 Duo 做了独立、安装身份核验后的测试，结果见下节。两组配置与设备不同，分别记录。
 - Adaptive 能让部分引擎尺寸缓存跟随 surface，但字段自洽不能证明实际方向、画布比例或点击坐标正确。
 - activity 计数和时间戳会推进，不支持“完全没有 tick”的判断；不能据此制造 tick 或强行解除 paused。
 - context 探针显示的 window／root／render bounds、变换与方向掩码未解释实际侧转；模型层几何检查也不能排除所有合成器问题。
 - `XP3SceneBootstrap.m` 的临时 UIScreen 替换属于失败实验，保留供分析，不作为推荐方案。
-- `XP3CompatEnableSceneWindowHandoff` **未实测，且 rootViewController 转移顺序和异常回滚仍待完善**。不要仅因编译通过就开启。
+- `XP3CompatEnableSceneWindowHandoff` 保持默认关闭。已补充 delegate 所有权核验、先分离再附加 root、异常回滚与回滚失败停止连接。新版 KVC 路径已构建，尚未运行验证。
 - `XP3CompatEnableAdaptiveKeepDesign` 未完成设备验证。文件界面尺寸与游戏自身逻辑画布应分别处理，不能以拉伸游戏来消除黑边。
 - UIDeviceOrientation 与 UIInterfaceOrientation 的左右枚举相反可对应同一物理方向，不能单凭枚举名判错。
 
 普通 iPad 的原 0.3、原始启动元数据回归中，横屏文件文字正向；原有两侧黑边仍在。自制消息／输入弹窗与比例点击夹具通过。这些结果不能扩展成 Duo 或真机通过。
+
+## 2026-10-22 Duo 受控运行
+
+使用唯一一台 iPhone Duo / iOS 27.1 模拟器。C1 启用 Scene、Adaptive 和只读探针，窗口迁移与 KeepDesign 关闭；主程序实际 SDK 为 27.1。启动前核验已安装主程序、配置和插件与待测副本一致，并通过完整签名检查。
+
+- 展开：文件界面文字正向，菜单可点击；scene/window/render 为 951×669 pt，surface 和 viewport 为 2853×2007 px。
+- 折叠：同一进程继续运行，菜单可点击；scene/window/render 更新为 678×466 pt，surface 和 viewport 为 2034×1398 px。
+- 再展开：恢复到 951×669 pt 与 2853×2007 px，文字正向；上述过程中没有重启应用。驱动保持 active、unpaused，回调计数持续增加。
+- 内屏处于展开状态时，`UIScreen.mainScreen` 仍反映外屏尺寸。内屏覆盖应结合 `windowScene.screen` 与实际画面判断。
+- C2 请求窗口迁移，但初版访问器检查拒绝了只有 KVC window 的旧 delegate，实际上仍走既有窗口路径。因此 C2 的显示结果不证明窗口迁移有效。最新源码已改为核验 KVC 所有权；它与已测的 C1/C2 插件版本分开记录。
+
+随后重新启动 C1 刷新文件列表，运行自制 640×480 比例夹具：Open 和 Closed 均可见四角标记与正方形；中心点击分别返回 `(320,239)`、`(318,240)`，预期为 `(320,240)`。游戏前台折叠后仍可响应点击，再展开已显示横向画面。后续观察被 Mac 锁屏阻断，Duo 的消息与输入完整回归继续等待。当前正式安装包仍为 0.3，未混入此实验。
 
 ## 构建（macOS / Xcode 27.1）
 
@@ -49,7 +61,7 @@ python3 -m unittest discover -s Diagnostics/DisplayLab -p 'test_*.py'
 
 输出位于相应 `build/`，被 Git 忽略。device 的 ad-hoc 签名只用于本地完整性检查，安装真机仍须用户自己的有效签名。
 
-本分支整理后已核对上述三个实验构建脚本：显示探针 device／simulator、Scene simulator、OfflineProbe device／simulator 均编译并通过签名检查；生成启动配置的 13 项测试通过。没有因此重跑 Duo 模拟器，也不把构建成功视作运行成功。
+本分支整理后已核对上述三个实验构建脚本：显示探针 device／simulator、Scene simulator、OfflineProbe device／simulator 均编译并通过签名检查；生成启动配置的 13 项测试通过。构建检查与上述 Duo 运行记录分别核验。
 
 ## 开关和后续验证
 
@@ -61,10 +73,10 @@ python3 -m unittest discover -s Diagnostics/DisplayLab -p 'test_*.py'
 | `XP3CompatEnableActivityProbe` | 观察现有 driver 的回调和状态 |
 | `XP3CompatEnableSceneContextProbe` | 只读记录公开窗口上下文 |
 | `XP3CompatEnableAdaptiveGeometry` | 实验引擎尺寸更新 |
-| `XP3CompatEnableSceneWindowHandoff` | 未实测的窗口迁移，保持关闭 |
+| `XP3CompatEnableSceneWindowHandoff` | 窗口迁移候选；新版 KVC 路径待测，默认关闭 |
 | `XP3CompatEnableAdaptiveKeepDesign` | 未实测的 design 保留候选，保持关闭 |
 
-先完善窗口迁移与回滚，再做单因素对照。每次只开一台模拟器；不清除或删除用户数据。测试中发现过同 Bundle ID 安装保留旧主程序、同时更新新配置和 dylib 的混合包：必须在启动前核对**已安装**主程序 SHA／实际 SDK、Info.plist 和 dylib SHA，并做完整签名检查。仅核对输入文件或 dylib 不足以确定运行版本。
+优先验证已通过文件界面折叠切换的 C1 组合；只有证据需要时再单独对照窗口迁移。每次只开一台模拟器；不清除或删除用户数据。测试中发现过同 Bundle ID 安装保留旧主程序、同时更新新配置和 dylib 的混合包：必须在启动前核对**已安装**主程序 SHA／实际 SDK、Info.plist 和 dylib SHA，并做完整签名检查。仅核对输入文件或 dylib 不足以确定运行版本。
 
 SHA 用于记录测试产物身份，不恢复注入器的固定 SHA 准入限制。少数引擎观察实验依赖已分析 ABI，保留其只读范围与身份防护；不能将未知版本的原始指针解释为该 ABI。
 

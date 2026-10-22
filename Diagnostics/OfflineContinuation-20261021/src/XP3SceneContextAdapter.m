@@ -672,11 +672,26 @@ static void XP3SAForwardToAppDelegate(NSString *event,
 // -[UIWindow initWithWindowScene:] (the only initializer the public header
 // documents as having matching frame & interface orientations), move the
 // existing root view controller into it, and repoint the legacy delegate.
-// Returns nil without changing anything when a precondition fails.
+// A failed transaction falls back only after the original ownership is restored.
+// If a custom setter even rejects rollback, keep every original object alive
+// and stop this diagnostic connection instead of attaching a half-moved root.
+static NSArray *gXP3SAHandoffRecoveryObjects;
+static void XP3SARestoreStep(NSString *name, NSMutableArray *errors,
+                            void (^operation)(void)) {
+    @try { operation(); }
+    @catch (NSException *exception) {
+        [errors addObject:@{@"step": name, @"exception": exception.name ?: @""}];
+    }
+}
+
 static UIWindow *XP3SAHandoffWindow(UIWindow *legacy,
                                     UIWindowScene *scene,
                                     NSMutableDictionary *details) {
     if (legacy == nil || scene == nil || details == nil) return nil;
+    if (!NSThread.isMainThread) {
+        details[@"handoffSkipped"] = @"window handoff requires the main thread";
+        return nil;
+    }
     UIViewController *root = legacy.rootViewController;
     if (root == nil) {
         details[@"handoffSkipped"] = @"legacy window has no root view controller";
@@ -687,40 +702,73 @@ static UIWindow *XP3SAHandoffWindow(UIWindow *legacy,
         return nil;
     }
     id delegate = UIApplication.sharedApplication.delegate;
-    if (delegate == nil) {
+    if (!delegate) {
         details[@"handoffSkipped"] = @"application delegate missing";
         return nil;
     }
-    // Verify the legacy delegate can be repointed before anything is moved.
+    // Inspect ownership without a trial setter call, which could have effects.
     @try {
-        [delegate setValue:legacy forKey:@"window"];
+        if ([delegate valueForKey:@"window"] != legacy) {
+            details[@"handoffSkipped"] = @"delegate does not own the selected window";
+            return nil;
+        }
     } @catch (NSException *exception) {
-        details[@"handoffSkipped"] = @"application delegate window is not KVC-settable";
+        details[@"handoffSkipped"] = @"application delegate window getter failed";
         details[@"handoffException"] = exception.name ?: @"";
         return nil;
     }
 
-    UIWindow *sceneWindow = [[UIWindow alloc] initWithWindowScene:scene];
-    if (sceneWindow == nil) {
-        details[@"handoffSkipped"] = @"initWithWindowScene: returned nil";
-        return nil;
-    }
-    sceneWindow.windowLevel = legacy.windowLevel;
-    sceneWindow.rootViewController = root;
-    [sceneWindow makeKeyAndVisible];
-    legacy.hidden = YES;
-    legacy.rootViewController = nil;
+    BOOL wasHidden = legacy.hidden;
+    BOOL wasKey = legacy.isKeyWindow;
+    UIWindow *sceneWindow = nil;
+    NSString *operation = @"initWithWindowScene";
     @try {
+        sceneWindow = [[UIWindow alloc] initWithWindowScene:scene];
+        if (!sceneWindow) {
+            details[@"handoffSkipped"] = @"initWithWindowScene: returned nil";
+            return nil;
+        }
+        sceneWindow.windowLevel = legacy.windowLevel;
+        operation = @"delegate-window";
         [delegate setValue:sceneWindow forKey:@"window"];
+        if ([delegate valueForKey:@"window"] != sceneWindow)
+            @throw [NSException exceptionWithName:@"XP3WindowOwnershipRejected"
+                                           reason:nil userInfo:nil];
+        operation = @"detach-original-root";
+        legacy.hidden = YES;
+        legacy.rootViewController = nil;
+        operation = @"attach-scene-root";
+        sceneWindow.rootViewController = root;
+        operation = @"show-scene-window";
+        [sceneWindow makeKeyAndVisible];
     } @catch (NSException *exception) {
-        // Roll back to the legacy window; the KVC set was verified above.
-        sceneWindow.hidden = YES;
-        legacy.rootViewController = root;
-        legacy.hidden = NO;
-        [legacy makeKeyAndVisible];
-        [delegate setValue:legacy forKey:@"window"];
-        details[@"handoffSkipped"] = @"delegate rejected the scene window; rolled back";
+        details[@"handoffFailedOperation"] = operation;
         details[@"handoffException"] = exception.name ?: @"";
+        NSMutableArray *errors = [NSMutableArray array];
+        XP3SARestoreStep(@"hide-candidate", errors, ^{ sceneWindow.hidden = YES; });
+        XP3SARestoreStep(@"detach-candidate-root", errors, ^{
+            if (sceneWindow.rootViewController == root) sceneWindow.rootViewController = nil;
+        });
+        XP3SARestoreStep(@"restore-delegate", errors, ^{ [delegate setValue:legacy forKey:@"window"]; });
+        XP3SARestoreStep(@"restore-original-root", errors, ^{ legacy.rootViewController = root; });
+        XP3SARestoreStep(@"restore-original-visibility", errors, ^{
+            legacy.hidden = wasHidden;
+            if (wasKey && !wasHidden) [legacy makeKeyAndVisible];
+        });
+        __block BOOL restored = NO;
+        XP3SARestoreStep(@"verify-rollback", errors, ^{
+            restored = [delegate valueForKey:@"window"] == legacy && legacy.rootViewController == root &&
+                sceneWindow.rootViewController == nil && legacy.hidden == wasHidden &&
+                (!wasKey || legacy.isKeyWindow);
+        });
+        details[@"handoffRollbackErrors"] = errors;
+        details[@"handoffRollbackComplete"] = @(restored);
+        if (!restored) {
+            gXP3SAHandoffRecoveryObjects = sceneWindow ? @[legacy, sceneWindow, root] : @[legacy, root];
+            details[@"handoffRollbackIncomplete"] = @YES;
+        }
+        details[@"handoffSkipped"] = restored ? @"handoff failed; original ownership restored"
+                                               : @"handoff failed; connection stopped";
         return nil;
     }
 
@@ -729,6 +777,8 @@ static UIWindow *XP3SAHandoffWindow(UIWindow *legacy,
     details[@"sceneWindowFrame"] = XP3SARect(sceneWindow.frame);
     details[@"legacyWindowHidden"] = @(legacy.hidden);
     details[@"rootViewControllerPreserved"] = @(sceneWindow.rootViewController == root);
+    details[@"legacyRootDetached"] = @(legacy.rootViewController == nil);
+    details[@"delegateWindowMatches"] = @YES; // verified within the transaction
     return sceneWindow;
 }
 
@@ -832,6 +882,11 @@ API_AVAILABLE(ios(13.0))
     if (gXP3SAHandoff) {
         UIWindow *handoffWindow = XP3SAHandoffWindow(existingWindow, windowScene, details);
         details[@"handoffRequested"] = @YES;
+        if ([details[@"handoffRollbackIncomplete"] boolValue]) {
+            details[@"action"] = @"handoff-rollback-incomplete; connection-stopped";
+            XP3SAAddEvent(@"scene-willConnect-handoff-stopped", details);
+            return;
+        }
         if (handoffWindow != nil) {
             adoptedWindow = handoffWindow;
             details[@"action"] = @"handoff-to-scene-window";
