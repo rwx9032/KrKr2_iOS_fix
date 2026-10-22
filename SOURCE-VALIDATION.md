@@ -73,8 +73,8 @@ duplicate `-lobjc` linker warning were emitted; neither is an error.
   input executable's actual hash in its report only. Same-version decrypted/signed copies may
   have different bytes and hashes while still passing the identity/version/Mach-O/ZIP checks.
 - README's test command works as written (with or without `-v`).
-- README states that fullscreen, window scaling, and iPhone Duo folding
-  adaptation are **still under investigation**, and that the repository must
+- README states that fullscreen and window scaling are not universally fixed,
+  and that iPhone Duo folding adaptation is outside the current scope. The repository must
   not be treated as having fixed them. It also denies fixed device sizes,
   forced rotation, and game-stretch patches.
 
