@@ -1,16 +1,13 @@
 # Source-Only Validation
 
-Date: 2026-10-21. Validated the generated source tree in place; no parent files,
-original IPA, games, saves, certificates, secrets, or full crash logs were read.
+Date: 2026-10-21. Validated the generated source tree in place.
 
 ## Layout and contents
 
 - 19 source/documentation files before this validation report: `README.md`, `build.sh`, `.gitignore`,
   3 files under `Sources/`, 3 under `tools/`, and 10 under `tests/`.
 - The publication allowlist contains text source or documentation only, including
-  this report (20 files total). No `.ipa`, `.dylib`, `.app`, Mach-O binary,
-  game asset, provisioning profile, or prebuilt plugin is staged. Test-generated
-  binaries remain local and ignored.
+  this report (20 files total). Test-generated binaries remain local and ignored.
 - `.gitignore` excludes build outputs, generated `.xp3` fixtures, dylibs, and IPAs.
 
 ## Commands and results
@@ -50,7 +47,7 @@ Total: **111 checks passed**, 0 failures.
 
 ### Documented build commands
 
-Both documented build modes were run into `/tmp` (not the repository):
+Both documented build modes were run into `/tmp`:
 
 ```sh
 XP3_OUTPUT=/tmp/.../XP3Compat.dylib XP3_BUILD_DIR=/tmp/.../build bash build.sh
@@ -69,14 +66,10 @@ duplicate `-lobjc` linker warning were emitted; neither is an error.
 - `tools/inject_ipa.py` CLI is `ipa dylib output`; README uses that exact order.
 - `tools/clone_ipa.py` CLI is `inputIPA outputIPA` with optional
   `--bundle-id`/`--display-name`; README uses the positional form correctly.
-- README no longer treats a fixed SHA-256 as a support boundary; the injector records the
-  input executable's actual hash in its report only. Same-version decrypted/signed copies may
-  have different bytes and hashes while still passing the identity/version/Mach-O/ZIP checks.
+- The injector records the input executable's actual hash in its report. Same-version
+  decrypted/signed copies may have different bytes and hashes while still passing
+  the identity/version/Mach-O/ZIP checks.
 - README's test command works as written (with or without `-v`).
-- README states that fullscreen and window scaling are not universally fixed,
-  and that iPhone Duo folding adaptation is outside the current scope. The repository must
-  not be treated as having fixed them. It also denies fixed device sizes,
-  forced rotation, and game-stretch patches.
 
 ## Change made
 
@@ -99,8 +92,6 @@ obsolete `DEVELOPER_DIR` line. No production or test logic was changed.
 
 ## Scope boundaries
 
-- No git commit/push, network, authentication, or `.git/config` access.
 - No real IPA, installed app, original binary, or third-party game asset used.
-- Native tests use real Foundation plus a fake UIKit; they do not replace
-  physical-device testing, and fullscreen/Duo behavior was not exercised.
-- Publication allowlist is left to the repository owner.
+- Native tests use real Foundation plus a fake UIKit. Physical-device, fullscreen,
+  window scaling, and Duo behavior were not exercised.
