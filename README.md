@@ -14,6 +14,8 @@
 
 **当前发布的是弹窗修复候选源码，目标为普通 iPhone、iPad 和 PlayCover；iPhone Duo 折叠屏适配不在本次范围内。** 保留原程序的窗口与启动行为，不纳入 Duo 实验中的 SDK 改标、Scene 接入或窗口迁移。插件核心没有固定设备尺寸、强制旋转或游戏拉伸补丁；全屏和窗口缩放仍不能视为已普遍修复。
 
+Duo 的实验源码保留在独立分支 [`experimental/iphone-duo`](https://github.com/rwx9032/KrKr2_iOS_fix/tree/experimental/iphone-duo)，包含诊断探针、Scene／窗口迁移候选和构建说明；尚未完成适配，未并入本分支。
+
 已完成 PlayCover 实际弹窗测试，以及实际程序转换副本在 iPhone／iPad 模拟器上的部分 UIKit 测试；物理 iPhone／iPad 尚未验证。自动测试使用真实 Foundation 与模拟 UIKit，不能代替真机测试。PlayTools 的主文件界面假触摸问题属于仍需区分的输入路径。
 
 ## 构建和注入
