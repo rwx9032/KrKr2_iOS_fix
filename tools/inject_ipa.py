@@ -193,6 +193,38 @@ def parse_macho(data, expected_type):
     return header, commands, names, first_data
 
 
+def arm64_executable(data):
+    """Extract the free release's unique arm64 slice after validating its FAT table."""
+    if data[:4] != b"\xca\xfe\xba\xbe":
+        parse_macho(data, MH_EXECUTE)
+        return data
+    if len(data) < 8:
+        raise InjectionError("Invalid FAT header")
+    count = struct.unpack_from(">I", data, 4)[0]
+    if not count or count > (len(data) - 8) // 20:
+        raise InjectionError("Invalid FAT architecture table")
+    ranges, selected = [], None
+    for index in range(count):
+        cpu, subtype, offset, size, align = struct.unpack_from(">5I", data, 8 + index * 20)
+        if (offset < 8 + count * 20 or not size or offset > len(data) or
+                size > len(data) - offset or align > 30 or offset % (1 << align)):
+            raise InjectionError("Invalid FAT slice bounds or alignment")
+        end = offset + size
+        if any(offset < b and a < end for a, b in ranges):
+            raise InjectionError("Overlapping FAT slices")
+        ranges.append((offset, end))
+        if cpu == CPU_ARM64 and subtype & 0xffffff == 0:
+            if selected is not None:
+                raise InjectionError("Duplicate arm64 slices")
+            selected = data[offset:end]
+            parse_macho(selected, MH_EXECUTE)
+            if struct.unpack_from("<I", selected, 8)[0] != subtype:
+                raise InjectionError("FAT architecture metadata mismatch")
+    if selected is None:
+        raise InjectionError("Missing supported arm64 slice")
+    return selected
+
+
 def inject_macho(data):
     header, commands, names, first_data = parse_macho(data, MH_EXECUTE)
     if INSTALL_NAME in names or any(name.endswith("/XP3Compat.dylib") for name in names):
@@ -285,25 +317,38 @@ def inject_ipa(ipa_path, dylib_path, output_path):
     with zipfile.ZipFile(ipa_path) as source:
         infos = source.infolist()
         validate_zip(infos)
-        if any(info.filename == LIB_PATH for info in infos):
+        app_infos = [member.filename for member in infos if member.filename.startswith("Payload/")
+                     and member.filename.count("/") == 2 and member.filename.endswith(".app/Info.plist")]
+        if len(app_infos) != 1 or app_infos[0] not in (
+                APP_ROOT + "Info.plist", "Payload/Kirikiroid2.app/Info.plist"):
+            raise InjectionError("Expected exactly one supported Payload app Info.plist")
+        info_path = app_infos[0]
+        app_root = info_path.rsplit("/", 1)[0] + "/"
+        lib_path = app_root + "Frameworks/XP3Compat.dylib"
+        if any(member.filename == lib_path for member in infos):
             raise InjectionError("Archive already contains XP3Compat.dylib")
-        info_path = APP_ROOT + "Info.plist"
-        app_infos = [info.filename for info in infos if info.filename.startswith("Payload/")
-                     and info.filename.count("/") == 2 and info.filename.endswith(".app/Info.plist")]
-        if app_infos != [info_path]:
-            raise InjectionError("Expected exactly Payload/XP3Player.app/Info.plist")
         info_bytes = source.read(info_path)
         info = plistlib.loads(info_bytes)
-        if (info.get("CFBundleIdentifier") != "tvp.XP3Player"
-                or info.get("CFBundleExecutable") != "XP3Player"
-                or info.get("CFBundleShortVersionString") != "1.3.11"):
+        is_free = app_root == "Payload/Kirikiroid2.app/"
+        executable = "Kirikiroid2" if is_free else "XP3Player"
+        if (not isinstance(info, dict) or
+                info.get("CFBundleIdentifier") != ("tvp.XP3Player.free" if is_free else "tvp.XP3Player") or
+                info.get("CFBundleExecutable") != executable or
+                info.get("CFBundleShortVersionString") != ("1.3.9" if is_free else "1.3.11") or
+                (is_free and info.get("CFBundleVersion") != "20")):
             raise InjectionError("Unsupported application identity or version")
+        if is_free:
+            if b"XP3COMPAT_FREE_139_V1" not in library:
+                raise InjectionError("Plugin does not support Kirikiroid2 free 1.3.9")
+            info["MinimumOSVersion"] = "12.0"
         ipad_launch_added = configure_ipad_launch(info)
-        updated_info_bytes = plist_bytes(info, info_bytes) if ipad_launch_added else info_bytes
+        updated_info_bytes = plist_bytes(info, info_bytes) if is_free or ipad_launch_added else info_bytes
         info_plist_unchanged = updated_info_bytes == info_bytes
-        executable_path = APP_ROOT + "XP3Player"
+        executable_path = app_root + executable
         original = source.read(executable_path)
-        patched, report = inject_macho(original)
+        executable_data = arm64_executable(original) if is_free else original
+        patched, report = inject_macho(executable_data)
+        report["arm64_extracted"] = executable_data != original
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix=".xp3compat-", suffix=".ipa", dir=output_path.parent)
         os.close(fd)
@@ -323,7 +368,7 @@ def inject_ipa(ipa_path, dylib_path, output_path):
                     # The source retains these same objects in its name lookup;
                     # preserve them so subsequent source.read() calls stay valid.
                     target.writestr(copy.copy(member), contents)
-                member = zipfile.ZipInfo(LIB_PATH, date_time=(2021, 12, 1, 0, 0, 0))
+                member = zipfile.ZipInfo(lib_path, date_time=(2021, 12, 1, 0, 0, 0))
                 member.create_system = 3
                 member.external_attr = (stat.S_IFREG | 0o755) << 16
                 member.compress_type = zipfile.ZIP_DEFLATED
@@ -332,7 +377,9 @@ def inject_ipa(ipa_path, dylib_path, output_path):
                 bad = target.testzip()
                 if bad or target.read(info_path) != updated_info_bytes:
                     raise InjectionError("Output ZIP integrity or Info.plist check failed")
-                if target.read(LIB_PATH) != library:
+                if target.read(executable_path) != patched:
+                    raise InjectionError("Output executable integrity check failed")
+                if target.read(lib_path) != library:
                     raise InjectionError("Output dylib integrity check failed")
             # A hard link atomically publishes without replacing a file created by a concurrent process.
             os.link(temporary, output_path)

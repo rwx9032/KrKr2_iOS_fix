@@ -55,6 +55,9 @@ __attribute__((objc_root_class))
 @interface NSString : NSObject
 - (BOOL)isEqualToString:(NSString *)other;
 @end
+@interface NSDictionary : NSObject
+- (id)objectForKeyedSubscript:(id)key;
+@end
 @interface NSArray<ObjectType> : NSObject
 @property(readonly) NSUInteger count;
 - (ObjectType)objectAtIndexedSubscript:(NSUInteger)index;
@@ -85,6 +88,7 @@ extern void CFRunLoopWakeUp(CFRunLoopRef);
 @interface NSBundle : NSObject
 + (NSBundle *)mainBundle;
 @property(readonly) NSString *bundleIdentifier;
+@property(readonly) NSDictionary *infoDictionary;
 @end
 @interface NSDate : NSObject
 + (NSDate *)dateWithTimeIntervalSinceNow:(NSTimeInterval)seconds;

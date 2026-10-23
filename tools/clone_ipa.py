@@ -102,8 +102,8 @@ def _app_root_and_info(infos):
     return app_root, info_path
 
 
-def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
-              display_name=DEFAULT_DISPLAY_NAME):
+def clone_ipa(input_ipa, output_ipa, bundle_id=None,
+              display_name=None):
     """Clone *input_ipa* to *output_ipa* with a new application identity.
 
     The output path is published atomically and is never overwritten.  The
@@ -121,8 +121,6 @@ def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
     # existing directory entry by accident.
     if os.path.lexists(output_ipa):
         raise CloneError("Output already exists; choose a new filename")
-    _validate_bundle_id(bundle_id)
-    _validate_display_name(display_name)
 
     input_hash = _sha256_file(input_ipa)
     removed = []
@@ -145,10 +143,26 @@ def clone_ipa(input_ipa, output_ipa, bundle_id=DEFAULT_BUNDLE_ID,
         if not isinstance(plist, dict):
             raise CloneError("Root app Info.plist must contain a dictionary")
         source_bundle_id = plist.get("CFBundleIdentifier")
-        if source_bundle_id != ORIGINAL_BUNDLE_ID:
+        is_free = source_bundle_id == "tvp.XP3Player.free"
+        if source_bundle_id not in (ORIGINAL_BUNDLE_ID, "tvp.XP3Player.free"):
             raise CloneError("Unsupported source bundle identifier: " + repr(source_bundle_id))
 
+        if is_free and (app_root != "Payload/Kirikiroid2.app/" or
+                        plist.get("CFBundleExecutable") != "Kirikiroid2" or
+                        plist.get("CFBundleShortVersionString") != "1.3.9" or
+                        plist.get("CFBundleVersion") != "20"):
+            raise CloneError("Unsupported free application identity or version")
+        if bundle_id is None:
+            bundle_id = "tvp.XP3Player.free.Compat" if is_free else DEFAULT_BUNDLE_ID
+        if display_name is None:
+            display_name = "Kirikiroid2 Fix" if is_free else DEFAULT_DISPLAY_NAME
+        _validate_bundle_id(bundle_id)
+        _validate_display_name(display_name)
+        if bundle_id == source_bundle_id:
+            raise CloneError("Target bundle identifier must differ from the original")
         updated = dict(plist)
+        if is_free:
+            updated["XP3CompatOriginalBundleIdentifier"] = source_bundle_id
         updated["CFBundleIdentifier"] = bundle_id
         updated["CFBundleDisplayName"] = display_name
         updated["CFBundleName"] = display_name
@@ -210,10 +224,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputIPA", type=Path, metavar="inputIPA")
     parser.add_argument("outputIPA", type=Path, metavar="outputIPA")
-    parser.add_argument("--bundle-id", default=DEFAULT_BUNDLE_ID,
-                        help="new CFBundleIdentifier (default: %(default)s)")
-    parser.add_argument("--display-name", default=DEFAULT_DISPLAY_NAME,
-                        help="new CFBundleDisplayName and CFBundleName (default: %(default)s)")
+    parser.add_argument("--bundle-id", default=None,
+                        help="new CFBundleIdentifier (default follows source app)")
+    parser.add_argument("--display-name", default=None,
+                        help="new CFBundleDisplayName and CFBundleName (default follows source app)")
     args = parser.parse_args()
     try:
         report = clone_ipa(args.inputIPA, args.outputIPA, args.bundle_id, args.display_name)

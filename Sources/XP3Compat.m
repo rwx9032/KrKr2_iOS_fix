@@ -12,6 +12,7 @@
 - (void)alertView:(UIAlertView *)alert clickedButtonAtIndex:(NSInteger)index;
 @end
 #endif
+#include "XP3BundleIdentity.h"
 #include <stdarg.h>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -391,11 +392,11 @@ void XP3CompatInstall(void) {
 }
 
 #if !XP3COMPAT_TESTING
+__attribute__((used)) static const char XP3CompatFreeVersion[] = "XP3COMPAT_FREE_139_V1";
 __attribute__((constructor)) static void XP3CompatLoad(void) {
     @autoreleasepool {
         NSString *bundleID = [NSBundle mainBundle].bundleIdentifier;
-        if (![bundleID isEqualToString:@"tvp.XP3Player"] &&
-            ![bundleID isEqualToString:@"tvp.XP3Player.Compat"]) return;
+        if (!XP3CompatBundleIsSupported(bundleID, [NSBundle mainBundle].infoDictionary)) return;
         XP3CompatInstall();
     }
 }

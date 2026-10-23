@@ -27,3 +27,7 @@ xcrun clang -isysroot "$SDK" -fobjc-arc -fblocks -Wall -Wextra \
 "$BUILD_DIR/native-input-tests"
 
 XP3_ENGINE_TEST_BUILD_DIR="$BUILD_DIR/engine-scheduling" bash "$ROOT/tests/run_engine_scheduling_tests.sh"
+
+xcrun clang -isysroot "$SDK" -fobjc-arc -framework Foundation \
+    "$ROOT/tests/BundleIdentityTests.m" -o "$BUILD_DIR/bundle-identity-tests"
+"$BUILD_DIR/bundle-identity-tests"
